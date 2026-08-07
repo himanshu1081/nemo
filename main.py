@@ -5,7 +5,16 @@ app = FastAPI()
 @app.get("/")
 def home():
     print("Server hit");
-    return {"message": "Hello vexa this side"}
+    return {
+        "version": "1.0",
+        "response": {
+            "outputSpeech": {
+                "type": "PlainText",
+                "text": "Hello Vexa this side"
+            },
+            "shouldEndSession": False
+        }
+    }
 
 @app.get("/cronjob")
 def cronjob():
