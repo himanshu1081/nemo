@@ -54,7 +54,7 @@ async def alexa(request: Request):
             query = body["request"]["intent"]["slots"]["message"]["value"]
             conversation_history.append(HumanMessage(content=query))
 
-            systemPrompt = SystemMessage(content="You are Vexa AI running on Alexa. User has asked you question and you are supposed to answer them plus use appropriate tools possible.")
+            systemPrompt = SystemMessage(content="You are Vexa AI running on Alexa. User has asked you question and you are supposed to answer them plus use appropriate tools possible. Keep replies short")
 
             reply =llm.invoke([systemPrompt]+conversation_history).content
 
