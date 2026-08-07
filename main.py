@@ -44,10 +44,10 @@ async def alexa(request: Request):
         }
 
     elif request_type == "IntentRequest":
-        intent_name = body["request"]["intent"]["name"]
+        intent_name =await body["request"]["intent"]["name"]
 
         if intent_name == "ChatIntent":
-            query = body["request"]["intent"]["value"]
+            query =await body["request"]["intent"]["value"]
             reply = llm.invoke(query).content
             print("""query is {query} and reply is {reply}""")
             return {
