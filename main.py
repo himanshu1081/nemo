@@ -4,7 +4,7 @@ app = FastAPI()
 
 @app.get("/")
 def home():
-    print("Server hit");
+    print("Server hit")
     return {"message":"Server is healthy"}
 
 
