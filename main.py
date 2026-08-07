@@ -8,7 +8,8 @@ app = FastAPI()
 llm= ChatGroq(
     model="llama-3.3-70b-versatile",
     api_key=os.getenv("GROQ_API_KEY"),
-    temperature=0
+    temperature=0,
+    max_tokens=300
 )
 
 class Alexa(BaseModel):
@@ -52,7 +53,7 @@ async def alexa(request: Request):
         if intent_name == "ChatIntent":
             query = body["request"]["intent"]["slots"]["message"]["value"]
             conversation_history.append(HumanMessage(content=query))
-            
+
             systemPrompt = SystemMessage(content="You are Vexa AI running on Alexa. User has asked you question and you are supposed to answer them plus use appropriate tools possible.")
 
             reply =llm.invoke([systemPrompt]+conversation_history).content
