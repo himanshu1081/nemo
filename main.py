@@ -1,6 +1,7 @@
 from fastapi import FastAPI,Request
 from pydantic import BaseModel
 from langchain_groq import ChatGroq
+from langchain_core.messages import AIMessage,HumanMessage,SystemMessage
 import os
 
 app = FastAPI()
@@ -25,6 +26,8 @@ def home():
 
 @app.post("/alexa")
 async def alexa(request: Request):
+    conversation_history=[]
+
     print("Server hit on alexa skill")
 
     body = await request.json()
@@ -48,8 +51,14 @@ async def alexa(request: Request):
 
         if intent_name == "ChatIntent":
             query = body["request"]["intent"]["slots"]["message"]["value"]
-            reply =llm.invoke(query).content
-            print(f"""query is {query} and reply is {reply}""")
+            conversation_history.append(HumanMessage(content=query))
+            
+            systemPrompt = SystemMessage(content="You are Vexa AI running on Alexa. User has asked you question and you are supposed to answer them plus use appropriate tools possible.")
+
+            reply =llm.invoke([systemPrompt]+conversation_history).content
+
+            conversation_history.append(reply)
+
             return {
                 "version": "1.0",
                 "response": {
