@@ -5,6 +5,13 @@ app = FastAPI()
 @app.get("/")
 def home():
     print("Server hit");
+    return {"message":"Server is healthy"}
+
+
+
+@app.post("/alexa")
+def home():
+    print("Server hit");
     return {
         "version": "1.0",
         "response": {
@@ -15,6 +22,7 @@ def home():
             "shouldEndSession": False
         }
     }
+
 
 @app.get("/cronjob")
 def cronjob():
