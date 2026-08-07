@@ -1,7 +1,14 @@
 from fastapi import FastAPI,Request
 from pydantic import BaseModel
+from langchain_groq import ChatGroq
+import os
 
 app = FastAPI()
+llm= ChatGroq(
+    model="llama-3.3-70b-versatile",
+    api_key=os.getenv("GROQ_API_KEY"),
+    temperature=0
+)
 
 class Alexa(BaseModel):
     name: str
@@ -40,12 +47,14 @@ async def alexa(request: Request):
         intent_name = body["request"]["intent"]["name"]
 
         if intent_name == "ChatIntent":
+            query = body["request"]["intent"]["value"]
+            reply = llm.invoke(query).content
             return {
                 "version": "1.0",
                 "response": {
                     "outputSpeech": {
                         "type": "PlainText",
-                        "text": "Let's talk!"
+                        "text": reply
                     },
                     "shouldEndSession": False
                 }

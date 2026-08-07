@@ -1,0 +1,35 @@
+# Environment variables
+.env
+
+# Python virtual environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+
+# Test/cache
+.pytest_cache/
+.mypy_cache/
+
+# Build
+dist/
+build/
+
+# Environment files
+*.env
+
+gitignore
+
+json.txt
