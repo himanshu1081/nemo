@@ -10,7 +10,7 @@ def home():
 
 
 @app.post("/alexa")
-def home():
+def alexa():
     print("Server hit on alexa skill");
     return {
         "version": "1.0",
