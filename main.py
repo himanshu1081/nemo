@@ -17,33 +17,39 @@ def home():
 
 
 @app.post("/alexa")
-def alexa(request:Request):
-    print("Server hit on alexa skill");
-    body = request.json()
-    userIntent = body.request.type
-    if(userIntent == "LaunchRequest"):
+async def alexa(request: Request):
+    print("Server hit on alexa skill")
+
+    body = await request.json()
+
+    request_type = body["request"]["type"]
+
+    if request_type == "LaunchRequest":
         return {
             "version": "1.0",
             "response": {
                 "outputSpeech": {
                     "type": "PlainText",
-                    "text": "Hello Vexa this side"
+                    "text": "Hello! I'm Vexa. What would you like to know?"
                 },
                 "shouldEndSession": False
             }
         }
 
-    if(userIntent=="ChatIntent"):
-        return {
-            "version": "1.0",
-            "response": {
-                "outputSpeech": {
-                    "type": "PlainText",
-                    "text": "Hello let's talk"
-                },
-                "shouldEndSession": False
+    elif request_type == "IntentRequest":
+        intent_name = body["request"]["intent"]["name"]
+
+        if intent_name == "ChatIntent":
+            return {
+                "version": "1.0",
+                "response": {
+                    "outputSpeech": {
+                        "type": "PlainText",
+                        "text": "Let's talk!"
+                    },
+                    "shouldEndSession": False
+                }
             }
-        }
 
 
 @app.get("/cronjob")
