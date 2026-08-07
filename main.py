@@ -18,6 +18,8 @@ class Alexa(BaseModel):
     price: float
     tax: float | None = None
 
+conversation_history=[]
+
 @app.get("/")
 def home():
     print("Server hit")
@@ -27,7 +29,6 @@ def home():
 
 @app.post("/alexa")
 async def alexa(request: Request):
-    conversation_history=[]
 
     print("Server hit on alexa skill")
 
@@ -58,7 +59,7 @@ async def alexa(request: Request):
 
             reply =llm.invoke([systemPrompt]+conversation_history).content
 
-            conversation_history.append(reply)
+            conversation_history.append(AIMessage(content=reply))
 
             return {
                 "version": "1.0",
