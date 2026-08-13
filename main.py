@@ -20,7 +20,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app = FastAPI()
 
 app.include_router(chat.router,prefix='/alexa')
 app.include_router(gmail.router,prefix='/api/connectors')
