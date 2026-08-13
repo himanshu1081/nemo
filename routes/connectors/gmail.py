@@ -52,7 +52,7 @@ async def connectGmail(request:Request):
         "state": state,
         "user_id": user_id,
         "provider": "gmail",
-        "expires_at": expires_at
+        "expires_at": expires_at.isoformat()
     }).execute()
     google_url = create_google_oauth_url(state)
 
