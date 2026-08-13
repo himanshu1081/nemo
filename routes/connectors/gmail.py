@@ -115,7 +115,7 @@ async def gmail_callback(code: str = Query(...),state: str = Query(...)):
         "provider": "gmail",
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "expires_at": credentials.expiry,
+        "expires_at": credentials.expiry.isoformat() if credentials.expiry else None,
         "scopes": credentials.scopes
     }).execute()
 
