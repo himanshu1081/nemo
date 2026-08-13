@@ -3,8 +3,14 @@ from pydantic import BaseModel
 from langchain_groq import ChatGroq
 from langchain_core.messages import AIMessage,HumanMessage,SystemMessage
 import os
+from routes import chat
+from routes.connectors import gmail
 
 app = FastAPI()
+
+app.include_router(chat.router,prefix='/alexa')
+app.include_router(gmail.router,prefix='/api/connectors')
+
 llm= ChatGroq(
     model="llama-3.3-70b-versatile",
     api_key=os.getenv("GROQ_API_KEY"),
@@ -18,59 +24,6 @@ class Alexa(BaseModel):
     price: float
     tax: float | None = None
 
-conversation_history=[]
-
-@app.get("/")
-def home():
-    print("Server hit")
-    return {"message":"Server is healthy"}
-
-
-
-@app.post("/alexa")
-async def alexa(request: Request):
-
-    print("Server hit on alexa skill")
-
-    body = await request.json()
-
-    request_type = body["request"]["type"]
-
-    if request_type == "LaunchRequest":
-        return {
-            "version": "1.0",
-            "response": {
-                "outputSpeech": {
-                    "type": "PlainText",
-                    "text": "Hello! I'm Nemo. What would you like to know?"
-                },
-                "shouldEndSession": False
-            }
-        }
-
-    elif request_type == "IntentRequest":
-        intent_name =body["request"]["intent"]["name"]
-
-        if intent_name == "ChatIntent":
-            query = body["request"]["intent"]["slots"]["message"]["value"]
-            conversation_history.append(HumanMessage(content=query))
-
-            systemPrompt = SystemMessage(content="You are Nemo AI running on Alexa. User has asked you question and you are supposed to answer them plus use appropriate tools possible. Keep replies short")
-
-            reply =llm.invoke([systemPrompt]+conversation_history).content
-
-            conversation_history.append(AIMessage(content=reply))
-
-            return {
-                "version": "1.0",
-                "response": {
-                    "outputSpeech": {
-                        "type": "PlainText",
-                        "text": reply
-                    },
-                    "shouldEndSession": False
-                }
-            }
 
 
 @app.get("/cronjob")
