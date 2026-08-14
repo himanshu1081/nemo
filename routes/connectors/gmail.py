@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, HTTPException, Query,HTMLResponse
+from fastapi import APIRouter, Request, HTTPException, Query
 import os
 from supabase import create_client
 from google_auth_oauthlib.flow import Flow
