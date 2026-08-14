@@ -49,12 +49,17 @@ async def connectGmail(request:Request):
     user_id = user.user.id
     state = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
-    supabase.table("oauth_states").insert({
-        "state": state,
-        "user_id": user_id,
-        "provider": "gmail",
-        "expires_at": expires_at.isoformat()
-    }).execute()
+    supabase.table("connector_info").upsert(
+        {
+            "user_id": user_id,
+            "provider": "gmail",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_at": expires_at,
+            "scopes": credentials.scopes
+        },
+        on_conflict="user_id,provider"
+    ).execute()
     google_url = create_google_oauth_url(state)
 
     return {
