@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, HTTPException, Query
+from fastapi import APIRouter, Request, HTTPException, Query,HTMLResponse
 import os
 from supabase import create_client
 from google_auth_oauthlib.flow import Flow
@@ -130,6 +130,13 @@ async def gmail_callback(code: str = Query(...),state: str = Query(...)):
         .eq("state", state) \
         .execute()
 
-    return {
-        "message": "Gmail connected successfully"
-    }
+    return HTMLResponse("""
+    <script>
+        window.opener.postMessage(
+            { type: "gmail-connected" },
+            "http://localhost:3000"
+        );
+
+        window.close();
+    </script>
+    """)
