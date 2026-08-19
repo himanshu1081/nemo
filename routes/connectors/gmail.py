@@ -1,16 +1,19 @@
 from fastapi import APIRouter, Request, HTTPException, Query
+from fastapi.responses import HTMLResponse
 import os
 from supabase import create_client
 from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 import secrets
+from dotenv import load_dotenv
+
+load_dotenv()
 
 supabase = create_client(
     os.getenv("SUPABASE_URL"),
     os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 )
-
 router = APIRouter()
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -25,6 +28,7 @@ def create_google_oauth_url(state):
         "scope": "https://www.googleapis.com/auth/gmail.readonly",
         "access_type": "offline",
         "state": state,
+        "prompt": "consent",
     }
 
     return (
@@ -33,7 +37,7 @@ def create_google_oauth_url(state):
     )
 
 @router.post("/gmail/connect")
-async def connectGmail(request:Request):
+def connectGmail(request:Request):
     authorization = request.headers.get("Authorization")
 
     if not authorization:
@@ -42,25 +46,28 @@ async def connectGmail(request:Request):
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "Invalid authorization header")
 
-    access_token = authorization.split(" ",1)[-1]
-    user = supabase.auth.get_user(access_token)
+    user_access_token = authorization.split(" ",1)[-1]
+    user = supabase.auth.get_user(user_access_token)
+
     if not user.user:
         raise HTTPException(401, "Invalid Supabase token")
+
     user_id = user.user.id
     state = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
-    supabase.table("connector_info").upsert(
-        {
-            "user_id": user_id,
-            "provider": "gmail",
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "expires_at": expires_at,
-            "scopes": credentials.scopes
-        },
-        on_conflict="user_id,provider"
-    ).execute()
     google_url = create_google_oauth_url(state)
+
+    state_data = {
+        "user_id": user_id,
+        "state":state,
+        "provider":"gmail",
+        "expires_at":expires_at.isoformat()
+    }
+    try:
+        response = supabase.table("oauth_states").insert(state_data).execute()
+        # print("Supabase response:", response)
+    except Exception as e:
+        print("Network or connection error:", e)
 
     return {
         "authorization_url": google_url
@@ -68,67 +75,74 @@ async def connectGmail(request:Request):
 
 @router.get("/gmail/callback")
 async def gmail_callback(code: str = Query(...),state: str = Query(...)):
-    result = (
-        supabase
-        .table("oauth_states")
-        .select("*")
-        .eq("state", state)
-        .eq("provider", "gmail")
-        .single()
-        .execute()
-    )
-    oauth_state = result.data
-
-    if not oauth_state:
-        raise HTTPException(400, "Invalid OAuth state")
-
-    expires_at = datetime.fromisoformat(
-        oauth_state["expires_at"].replace("Z", "+00:00")
-    )
-
-    if datetime.now(timezone.utc) > expires_at:
-        raise HTTPException(400, "OAuth state expired")
     
-    user_id = oauth_state["user_id"]
+    try:
+        result = (
+            supabase
+            .table("oauth_states")
+            .select("*")
+            .eq("state", state)
+            .eq("provider", "gmail")
+            .single()
+            .execute()
+        )
+        oauth_state = result.data
 
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-            }
+        if not oauth_state:
+            raise HTTPException(400, "Invalid OAuth state")
+
+        expires_at = datetime.fromisoformat(
+            oauth_state["expires_at"].replace("Z", "+00:00")
+        )
+
+        if datetime.now(timezone.utc) > expires_at:
+            raise HTTPException(400, "OAuth state expired")
+        
+        user_id = oauth_state["user_id"]
+
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                }
+            },
+            scopes=[
+                "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+        )
+
+        flow.redirect_uri = GOOGLE_REDIRECT_URI
+       
+
+        flow.fetch_token(code=code)
+
+        credentials = flow.credentials
+        print(credentials.to_json())
+        access_token = credentials.token
+        refresh_token = credentials.refresh_token   
+        
+        #storing both tokens inside supabase
+        supabase.table("connector_info").upsert({
+            "user_id": user_id,
+            "provider": "gmail",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_at": credentials.expiry.isoformat() if credentials.expiry else None,
+            "scopes": credentials.scopes
         },
-        scopes=[
-            "https://www.googleapis.com/auth/gmail.readonly"
-        ]
-    )
+            on_conflict="user_id,provider").execute()
 
-    flow.redirect_uri = GOOGLE_REDIRECT_URI
+        #deleting state from supabase
+        supabase.table("oauth_states") \
+            .delete() \
+            .eq("state", state) \
+            .execute()
 
-    flow.fetch_token(code=code)
-
-    credentials = flow.credentials
-
-    access_token = credentials.token
-    refresh_token = credentials.refresh_token
-    
-    #storing both tokens inside supabase
-    supabase.table("connector_info").upsert({
-        "user_id": user_id,
-        "provider": "gmail",
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "expires_at": credentials.expiry.isoformat() if credentials.expiry else None,
-        "scopes": credentials.scopes
-    }).execute()
-
-    #deleting state from supabase
-    supabase.table("oauth_states") \
-        .delete() \
-        .eq("state", state) \
-        .execute()
+    except Exception as e:
+        print("An error occurred:", e)
 
     return HTMLResponse("""
     <script>
