@@ -49,12 +49,17 @@ async def alexa(request: Request):
         return speak("Goodbye!", end_session=True)
 
     if intent_name == "AMAZON.HelpIntent":
-        return speak("You can ask me things like, check my unread emails, or any emails from Amazon?")
+        return speak("You can ask me things like, check my unread emails, or send an email to Rahul.")
 
-    if intent_name != "ChatIntent":
+    if intent_name == "AMAZON.YesIntent":
+        query = "yes"
+    elif intent_name == "AMAZON.NoIntent":
+        query = "no"
+    elif intent_name == "ChatIntent":
+        query = intent.get("slots", {}).get("message", {}).get("value")
+    else:
         return speak("Sorry, I didn't get that. What would you like to know?")
 
-    query = intent.get("slots", {}).get("message", {}).get("value")
     if not query:
         return speak("Sorry, I didn't catch that. Could you say it again?")
 

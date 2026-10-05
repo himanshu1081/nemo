@@ -16,13 +16,17 @@ router = APIRouter()
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+]
 
 def create_google_oauth_url(state):
     params = {
         "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": GOOGLE_REDIRECT_URI,
         "response_type": "code",
-        "scope": "https://www.googleapis.com/auth/gmail.readonly",
+        "scope": " ".join(SCOPES),
         "access_type": "offline",
         "state": state,
         "prompt": "consent",
@@ -107,9 +111,7 @@ async def gmail_callback(code: str = Query(...),state: str = Query(...)):
                     "token_uri": "https://oauth2.googleapis.com/token",
                 }
             },
-            scopes=[
-                "https://www.googleapis.com/auth/gmail.readonly"
-            ]
+            scopes=SCOPES
         )
 
         flow.redirect_uri = GOOGLE_REDIRECT_URI

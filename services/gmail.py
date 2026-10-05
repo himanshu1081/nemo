@@ -3,6 +3,8 @@ import html
 import os
 import re
 from datetime import datetime, timezone
+from email.message import EmailMessage
+from email.utils import getaddresses
 
 from google.auth.transport.requests import AuthorizedSession, Request
 from google.oauth2.credentials import Credentials
@@ -16,6 +18,10 @@ MAX_BODY_CHARS = 2000
 
 
 class GmailNotConnected(Exception):
+    pass
+
+
+class GmailMissingScope(Exception):
     pass
 
 
@@ -142,3 +148,42 @@ def get_message(user_id: str, message_id: str) -> dict:
         "date": headers.get("date", ""),
         "body": body,
     }
+
+
+def find_contacts(user_id: str, name: str, max_results: int = 10) -> list[dict]:
+    """Collect email addresses matching a name from the user's sent and received mail."""
+    session = _session(user_id)
+    response = session.get(
+        f"{GMAIL_API}/messages",
+        params={"q": f"from:{name} OR to:{name}", "maxResults": max_results},
+    )
+    response.raise_for_status()
+
+    contacts = {}
+    needle = name.lower()
+    for item in response.json().get("messages", []):
+        detail = session.get(
+            f"{GMAIL_API}/messages/{item['id']}",
+            params={"format": "metadata", "metadataHeaders": ["From", "To", "Cc"]},
+        )
+        detail.raise_for_status()
+        headers = detail.json().get("payload", {}).get("headers", [])
+        values = [h["value"] for h in headers if h["name"].lower() in ("from", "to", "cc")]
+        for display, address in getaddresses(values):
+            if address and (needle in display.lower() or needle in address.lower()):
+                contacts.setdefault(address.lower(), {"name": display, "email": address})
+    return list(contacts.values())
+
+
+def send_message(user_id: str, to: str, subject: str, body: str) -> dict:
+    message = EmailMessage()
+    message["To"] = to
+    message["Subject"] = subject
+    message.set_content(body)
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+
+    response = _session(user_id).post(f"{GMAIL_API}/messages/send", json={"raw": raw})
+    if response.status_code == 403:
+        raise GmailMissingScope("Gmail send permission not granted")
+    response.raise_for_status()
+    return {"id": response.json().get("id")}
