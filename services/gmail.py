@@ -2,6 +2,7 @@ import base64
 import html
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from email.utils import getaddresses
@@ -73,6 +74,22 @@ def _session(user_id: str) -> AuthorizedSession:
     return AuthorizedSession(get_credentials(user_id))
 
 
+def _fetch_metadata(credentials: Credentials, message_ids: list[str], headers: list[str]) -> list[dict]:
+    """Fetch message metadata in parallel, one session per request since requests.Session isn't thread safe."""
+    def fetch(message_id):
+        response = AuthorizedSession(credentials).get(
+            f"{GMAIL_API}/messages/{message_id}",
+            params={"format": "metadata", "metadataHeaders": headers},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    if not message_ids:
+        return []
+    with ThreadPoolExecutor(max_workers=len(message_ids)) as pool:
+        return list(pool.map(fetch, message_ids))
+
+
 def _headers(payload: dict) -> dict:
     wanted = {"from", "subject", "date"}
     return {
@@ -83,24 +100,19 @@ def _headers(payload: dict) -> dict:
 
 
 def list_messages(user_id: str, query: str = "is:unread", max_results: int = 5) -> list[dict]:
-    session = _session(user_id)
-    response = session.get(
+    credentials = get_credentials(user_id)
+    response = AuthorizedSession(credentials).get(
         f"{GMAIL_API}/messages",
         params={"q": query, "maxResults": max_results},
     )
     response.raise_for_status()
 
+    ids = [item["id"] for item in response.json().get("messages", [])]
     messages = []
-    for item in response.json().get("messages", []):
-        detail = session.get(
-            f"{GMAIL_API}/messages/{item['id']}",
-            params={"format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]},
-        )
-        detail.raise_for_status()
-        data = detail.json()
+    for data in _fetch_metadata(credentials, ids, ["From", "Subject", "Date"]):
         headers = _headers(data.get("payload", {}))
         messages.append({
-            "id": item["id"],
+            "id": data["id"],
             "from": headers.get("from", ""),
             "subject": headers.get("subject", ""),
             "date": headers.get("date", ""),
@@ -152,22 +164,18 @@ def get_message(user_id: str, message_id: str) -> dict:
 
 def find_contacts(user_id: str, name: str, max_results: int = 10) -> list[dict]:
     """Collect email addresses matching a name from the user's sent and received mail."""
-    session = _session(user_id)
-    response = session.get(
+    credentials = get_credentials(user_id)
+    response = AuthorizedSession(credentials).get(
         f"{GMAIL_API}/messages",
         params={"q": f"from:{name} OR to:{name}", "maxResults": max_results},
     )
     response.raise_for_status()
 
+    ids = [item["id"] for item in response.json().get("messages", [])]
     contacts = {}
     needle = name.lower()
-    for item in response.json().get("messages", []):
-        detail = session.get(
-            f"{GMAIL_API}/messages/{item['id']}",
-            params={"format": "metadata", "metadataHeaders": ["From", "To", "Cc"]},
-        )
-        detail.raise_for_status()
-        headers = detail.json().get("payload", {}).get("headers", [])
+    for data in _fetch_metadata(credentials, ids, ["From", "To", "Cc"]):
+        headers = data.get("payload", {}).get("headers", [])
         values = [h["value"] for h in headers if h["name"].lower() in ("from", "to", "cc")]
         for display, address in getaddresses(values):
             if address and (needle in display.lower() or needle in address.lower()):
