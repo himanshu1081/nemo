@@ -1,21 +1,44 @@
-from langgraph.graph import START,END,StateGraph
-from typing import TypedDict
-from langchain_groq import ChatGroq
-from langgraph.prebuilt import ToolNode
-from services.resend import resend
-class AgentState(TypedDict):
-    message:str
-    response:str
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
 
-def call_ai(state:AgentState)->AgentState:
-    systemPrompt = SystemMessage(content="You are Nemo AI running on Alexa. User has asked you question and you are supposed to answer them plus use appropriate tools possible. Keep replies short")
-    response = llm.invoke([system_message]+state["messages"])    
+from agent.tools import TOOLS
+from services.llm import llm
+
+SYSTEM_PROMPT = SystemMessage(content=(
+    "You are Nemo, an AI assistant running on Alexa. Your reply is spoken aloud, "
+    "so use plain conversational sentences: no markdown, lists, emojis, URLs or email ids. "
+    "Keep replies short. Use the available tools whenever the user asks about their emails; "
+    "if a request has several parts, call every tool needed. "
+    "When listing emails, mention sender name and subject briefly, and summarize email bodies "
+    "instead of reading them word for word."
+))
+
+llm_with_tools = llm.bind_tools(TOOLS)
+
+
+def call_ai(state: MessagesState):
+    response = llm_with_tools.invoke([SYSTEM_PROMPT] + state["messages"])
     return {"messages": [response]}
 
-def should_continue(state:AgentState)->AgentState:
-    last_message = state["message"][-1]
-    if not last_message.tool_calls:
-        return "end"
-    else:
-        return "continue"
 
+builder = StateGraph(MessagesState)
+builder.add_node("agent", call_ai)
+builder.add_node("tools", ToolNode(TOOLS))
+builder.add_edge(START, "agent")
+builder.add_conditional_edges("agent", tools_condition)
+builder.add_edge("tools", "agent")
+
+graph = builder.compile(checkpointer=MemorySaver())
+
+
+async def run_agent(text: str, user_id: str, session_id: str) -> str:
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content=text)]},
+        config={
+            "configurable": {"thread_id": session_id, "user_id": user_id},
+            "recursion_limit": 8,
+        },
+    )
+    return result["messages"][-1].content

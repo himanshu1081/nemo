@@ -1,9 +1,27 @@
-from fastapi import FastAPI, APIRouter
-from langgraph.graph import StateGraph,START,END
+import os
+from fastapi import APIRouter, Request
+
+from agent.agent import run_agent
 
 router = APIRouter()
 
-conversation_history=[]
+
+def speak(text: str, end_session: bool = False) -> dict:
+    return {
+        "version": "1.0",
+        "response": {
+            "outputSpeech": {
+                "type": "PlainText",
+                "text": text
+            },
+            "shouldEndSession": end_session
+        }
+    }
+
+
+def resolve_user_id(body: dict) -> str:
+    # Single user for now; swap for Alexa Account Linking later
+    return os.getenv("NEMO_USER_ID")
 
 
 @router.post("")
@@ -16,39 +34,38 @@ async def alexa(request: Request):
     request_type = body["request"]["type"]
 
     if request_type == "LaunchRequest":
-        return {
-            "version": "1.0",
-            "response": {
-                "outputSpeech": {
-                    "type": "PlainText",
-                    "text": "Hello! I'm Nemo. What would you like to know?"
-                },
-                "shouldEndSession": False
-            }
-        }
+        return speak("Hello! I'm Nemo. What would you like to know?")
 
-    elif request_type == "IntentRequest":
-        intent_name =body["request"]["intent"]["name"]
+    if request_type == "SessionEndedRequest":
+        return {"version": "1.0", "response": {}}
 
-        if intent_name == "ChatIntent":
-            query = body["request"]["intent"]["slots"]["message"]["value"]
+    if request_type != "IntentRequest":
+        return speak("Sorry, I didn't get that.")
 
+    intent = body["request"]["intent"]
+    intent_name = intent["name"]
 
-            conversation_history.append(HumanMessage(content=query))
+    if intent_name in ("AMAZON.StopIntent", "AMAZON.CancelIntent"):
+        return speak("Goodbye!", end_session=True)
 
-            systemPrompt = SystemMessage(content="You are Nemo AI running on Alexa. User has asked you question and you are supposed to answer them plus use appropriate tools possible. Keep replies short")
+    if intent_name == "AMAZON.HelpIntent":
+        return speak("You can ask me things like, check my unread emails, or any emails from Amazon?")
 
-            reply =llm.invoke([systemPrompt]+conversation_history).content
+    if intent_name != "ChatIntent":
+        return speak("Sorry, I didn't get that. What would you like to know?")
 
-            conversation_history.append(AIMessage(content=reply))
+    query = intent.get("slots", {}).get("message", {}).get("value")
+    if not query:
+        return speak("Sorry, I didn't catch that. Could you say it again?")
 
-            return {
-                "version": "1.0",
-                "response": {
-                    "outputSpeech": {
-                        "type": "PlainText",
-                        "text": reply
-                    },
-                    "shouldEndSession": False
-                }
-            }
+    session_id = body.get("session", {}).get("sessionId", "default")
+
+    try:
+        reply = await run_agent(query, resolve_user_id(body), session_id)
+    except Exception as e:
+        print("Agent error:", e)
+        reply = "Sorry, something went wrong."
+
+    print("Query:", query, "| Reply:", reply)
+
+    return speak(reply)

@@ -1,19 +1,16 @@
 from fastapi import APIRouter, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse
 import os
-from supabase import create_client
 from google_auth_oauthlib.flow import Flow
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 import secrets
 from dotenv import load_dotenv
+from services.crypto import encrypt
+from services.supabase_client import supabase
 
 load_dotenv()
 
-supabase = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-)
 router = APIRouter()
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -75,7 +72,8 @@ def connectGmail(request:Request):
 
 @router.get("/gmail/callback")
 async def gmail_callback(code: str = Query(...),state: str = Query(...)):
-    
+
+    message_type = "gmail-connected"
     try:
         result = (
             supabase
@@ -83,10 +81,10 @@ async def gmail_callback(code: str = Query(...),state: str = Query(...)):
             .select("*")
             .eq("state", state)
             .eq("provider", "gmail")
-            .single()
+            .maybe_single()
             .execute()
         )
-        oauth_state = result.data
+        oauth_state = result.data if result else None
 
         if not oauth_state:
             raise HTTPException(400, "Invalid OAuth state")
@@ -120,7 +118,6 @@ async def gmail_callback(code: str = Query(...),state: str = Query(...)):
         flow.fetch_token(code=code)
 
         credentials = flow.credentials
-        print(credentials.to_json())
         access_token = credentials.token
         refresh_token = credentials.refresh_token   
         
@@ -128,8 +125,8 @@ async def gmail_callback(code: str = Query(...),state: str = Query(...)):
         supabase.table("connector_info").upsert({
             "user_id": user_id,
             "provider": "gmail",
-            "access_token": access_token,
-            "refresh_token": refresh_token,
+            "access_token": encrypt(access_token),
+            "refresh_token": encrypt(refresh_token) if refresh_token else None,
             "expires_at": credentials.expiry.isoformat() if credentials.expiry else None,
             "scopes": credentials.scopes
         },
@@ -143,11 +140,12 @@ async def gmail_callback(code: str = Query(...),state: str = Query(...)):
 
     except Exception as e:
         print("An error occurred:", e)
+        message_type = "gmail-error"
 
-    return HTMLResponse("""
+    return HTMLResponse(f"""
     <script>
         window.opener.postMessage(
-            { type: "gmail-connected" },
+            {{ type: "{message_type}" }},
             "http://localhost:3000"
         );
 
